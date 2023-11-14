@@ -1,15 +1,46 @@
 #
-# Build stage
+# Set a variable that can be used in all stages.
 #
-FROM maven:3.8.2-jdk-11 AS build
-COPY . .
-RUN mvn clean package -DskipTests
+ARG BUILD_HOME=/gradle-docker-example
 
 #
-# Package stage
+# Gradle image for the build stage.
 #
-FROM openjdk:11-jdk-slim
-COPY --from=build /target/demo-0.0.1-SNAPSHOT.jar demo.jar
-# ENV PORT=8080
-EXPOSE 8080
-ENTRYPOINT ["java","-jar","demo.jar"]
+FROM gradle:jdk11 as build-image
+
+#
+# Set the working directory.
+#
+ARG BUILD_HOME
+ENV APP_HOME=$BUILD_HOME
+WORKDIR $APP_HOME
+
+#
+# Copy the Gradle config, source code, and static analysis config
+# into the build container.
+#
+COPY --chown=gradle:gradle build.gradle settings.gradle $APP_HOME/
+COPY --chown=gradle:gradle src $APP_HOME/src
+COPY --chown=gradle:gradle config $APP_HOME/config
+
+#
+# Build the application.
+#
+RUN gradle --no-daemon build
+
+#
+# Java image for the application to run in.
+#
+FROM openjdk:12-alpine
+
+#
+# Copy the jar file in and name it app.jar.
+#
+ARG BUILD_HOME
+ENV APP_HOME=$BUILD_HOME
+COPY --from=build-image $APP_HOME/build/libs/gradle-docker-example.jar app.jar
+
+#
+# The command to run when the container starts.
+#
+ENTRYPOINT java -jar app.jar
